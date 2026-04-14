@@ -1,99 +1,147 @@
 module game_cu (
     input clk,
     input rst,
-    input start,
     input show_tick,
+    input blank_tick,
     input one_sec_tick,
-    input show_done,
+    input start_pulse,
     input input_valid,
-    input match,
-    input last_input,
-    input timeout,
-    input show_phase,
-    input display_idx_val[4],
-    input seq_len_val[4],
-    output display_idx_clr,
-    output display_idx_inc,
-    output input_idx_clr,
-    output input_idx_inc,
-    output timer_load,
-    output timer_en,
+    input rd_score[32],
+    input rd_timer[32],
+    input rd_seq_len[32],
+    input rd_display_idx[32],
+    input rd_input_idx[32],
+    input rd_latched[32],
+    input rd_rev_flag[32],
+    input current_show_arrow[2],
+    input expected_arrow[2],
+    output we,
+    output wa[3],
+    output data[32],
     output seq_load,
-    output score_inc,
-    output level_inc,
     output display_mode[3],
+    output show_phase_out,
     output in_wait_input
 ) {
     enum States {
         IDLE,
         INIT_LEVEL,
+        INIT_INPUT_IDX,
+        INIT_TIMER,
         SHOW_SEQUENCE,
         WAIT_INPUT,
-        CHECK_INPUT,
+        CHECK_MATCH,
+        NEXT_ARROW,
+        LEVEL_CLEAR_SCORE,
+        LEVEL_CLEAR_SEQLEN,
         GAME_OVER
     }
     .clk(clk) {
         dff state[$width(States)](#INIT(States.IDLE), .rst(rst))
+        dff show_phase_dff(.rst(rst))
     }
     always {
-        state.d = state.q
-        display_idx_clr = 0
-        display_idx_inc = 0
-        input_idx_clr   = 0
-        input_idx_inc   = 0
-        timer_load      = 0
-        timer_en        = 0
-        seq_load        = 0
-        score_inc       = 0
-        level_inc       = 0
-        display_mode    = 0
-        in_wait_input   = 0
+        state.d          = state.q
+        show_phase_dff.d = show_phase_dff.q
+        we   = 0
+        wa   = d6
+        data = 0
+        seq_load       = 0
+        display_mode   = 0
+        in_wait_input  = 0
+        show_phase_out = show_phase_dff.q
         case (state.q) {
             States.IDLE:
-                display_mode = 0
-                if (start) { state.d = States.INIT_LEVEL }
+                display_mode     = 0
+                show_phase_dff.d = 0
+                if (start_pulse) {
+                    we      = 1
+                    wa      = d0
+                    data    = 0
+                    state.d = States.INIT_LEVEL
+                }
             States.INIT_LEVEL:
-                seq_load        = 1
-                display_idx_clr = 1
-                input_idx_clr   = 1
-                timer_load      = 1
-                display_mode    = 0
-                state.d         = States.SHOW_SEQUENCE
+                seq_load         = 1
+                show_phase_dff.d = 0
+                display_mode     = 0
+                we   = 1
+                wa   = d3
+                data = 0
+                state.d = States.INIT_INPUT_IDX
+            States.INIT_INPUT_IDX:
+                we      = 1
+                wa      = d4
+                data    = 0
+                state.d = States.INIT_TIMER
+            States.INIT_TIMER:
+                we      = 1
+                wa      = d1
+                data    = 10
+                state.d = States.SHOW_SEQUENCE
             States.SHOW_SEQUENCE:
                 display_mode = 1
-                if (show_tick && show_phase) {
-                    if (display_idx_val == seq_len_val - 1) {
-                        timer_load = 1
-                        state.d    = States.WAIT_INPUT
-                    } else {
-                        display_idx_inc = 1
+                if (show_phase_dff.q == 0) {
+                    if (show_tick) { show_phase_dff.d = 1 }
+                } else {
+                    if (blank_tick) {
+                        show_phase_dff.d = 0
+                        if (rd_display_idx + 1 == rd_seq_len) {
+                            we      = 1
+                            wa      = d1
+                            data    = 10
+                            state.d = States.WAIT_INPUT
+                        } else {
+                            we      = 1
+                            wa      = d3
+                            data    = rd_display_idx + 1
+                            state.d = States.SHOW_SEQUENCE
+                        }
                     }
                 }
             States.WAIT_INPUT:
                 display_mode  = 2
                 in_wait_input = 1
-                if (one_sec_tick) { timer_en = 1 }
-                if (timeout)      { state.d = States.GAME_OVER }
-                else if (input_valid) {
-                            state.d = States.CHECK_INPUT 
-                        }
-            States.CHECK_INPUT:
+                if (one_sec_tick && rd_timer > 0) {
+                    we   = 1
+                    wa   = d1
+                    data = rd_timer - 1
+                }
+                if (rd_timer == 0)      { state.d = States.GAME_OVER }
+                else if (input_valid)   { state.d = States.CHECK_MATCH }
+            States.CHECK_MATCH:
                 display_mode = 2
-                if (match) {
-                    input_idx_inc = 1
-                    if (last_input) {
-                        score_inc = 1
-                        level_inc = 1
-                        state.d   = States.INIT_LEVEL
-                    } else {
-                        state.d = States.WAIT_INPUT
-                    }
+                if (rd_latched[1:0] == expected_arrow) {
+                    if (rd_input_idx + 1 == rd_seq_len) { state.d = States.LEVEL_CLEAR_SCORE }
+                    else                                 { state.d = States.NEXT_ARROW }
                 } else {
                     state.d = States.GAME_OVER
                 }
+            States.NEXT_ARROW:
+                display_mode = 2
+                we      = 1
+                wa      = d4
+                data    = rd_input_idx + 1
+                state.d = States.WAIT_INPUT
+            States.LEVEL_CLEAR_SCORE:
+                display_mode = 2
+                we   = 1
+                wa   = d0
+                data = rd_rev_flag[0] ? rd_score + 2 : rd_score + 1
+                state.d = States.LEVEL_CLEAR_SEQLEN
+            States.LEVEL_CLEAR_SEQLEN:
+                display_mode = 2
+                we   = 1
+                wa   = d2
+                data = (rd_seq_len < 15) ? rd_seq_len + 1 : rd_seq_len
+                state.d = States.INIT_LEVEL
             States.GAME_OVER:
                 display_mode = 3
-                if (start) { state.d = States.IDLE }
+                if (start_pulse) {
+                    we      = 1
+                    wa      = d0
+                    data    = 0
+                    state.d = States.IDLE
+                }
         }
     }
 }

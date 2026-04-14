@@ -1,0 +1,74 @@
+module game_regfile (
+    input clk,
+    input rst,
+    input we,
+    input wa[3],
+    input data[32],
+    input ra1[3],
+    input ra2[3],
+    output rd1[32],
+    output rd2[32],
+    output score_out[8],
+    output timer_out[8],
+    output seq_len_out[4],
+    output display_idx_out[4],
+    output input_idx_out[4],
+    output latched_arrow_out[2],
+    output rev_flag_out
+) {
+    .clk(clk) {
+        .rst(rst) {
+            dff score[32](#INIT(0))
+            dff timer[32](#INIT(10))
+            dff seq_len[32](#INIT(2))
+            dff display_idx[32](#INIT(0))
+            dff input_idx[32](#INIT(0))
+            dff latched_arrow[32](#INIT(0))
+            dff temp[32](#INIT(0))
+            dff rev_flag[32](#INIT(0))
+        }
+    }
+    always {
+        if (we) {
+            case (wa) {
+                d0: score.d         = data
+                d1: timer.d         = data
+                d2: seq_len.d       = data
+                d3: display_idx.d   = data
+                d4: input_idx.d     = data
+                d5: latched_arrow.d = data
+                d6: temp.d          = data
+                d7: rev_flag.d      = data
+            }
+        }
+        case (ra1) {
+            d0: rd1 = score.q
+            d1: rd1 = timer.q
+            d2: rd1 = seq_len.q
+            d3: rd1 = display_idx.q
+            d4: rd1 = input_idx.q
+            d5: rd1 = latched_arrow.q
+            d6: rd1 = temp.q
+            d7: rd1 = rev_flag.q
+            default: rd1 = 0
+        }
+        case (ra2) {
+            d0: rd2 = score.q
+            d1: rd2 = timer.q
+            d2: rd2 = seq_len.q
+            d3: rd2 = display_idx.q
+            d4: rd2 = input_idx.q
+            d5: rd2 = latched_arrow.q
+            d6: rd2 = temp.q
+            d7: rd2 = rev_flag.q
+            default: rd2 = 0
+        }
+        score_out         = score.q[7:0]
+        timer_out         = timer.q[7:0]
+        seq_len_out       = seq_len.q[3:0]
+        display_idx_out   = display_idx.q[3:0]
+        input_idx_out     = input_idx.q[3:0]
+        latched_arrow_out = latched_arrow.q[1:0]
+        rev_flag_out      = rev_flag.q[0]
+    }
+}
