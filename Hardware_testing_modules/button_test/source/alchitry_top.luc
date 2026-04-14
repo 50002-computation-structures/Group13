@@ -1,0 +1,12 @@
+module alchitry_top (
+    input io_dip[3][8],
+    output io_led[3][8]
+) {
+    always {
+        io_led[0] = 8b00000000
+        io_led[1] = 8b00000000
+        io_led[2] = 8b00000000
+
+        io_led[1][6] = io_dip[1][6]
+    }
+}
