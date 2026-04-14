@@ -1,40 +1,36 @@
 module game_data (
     input clk,
     input rst,
-    input seq_load,
-    input display_idx_clr,
-    input display_idx_inc,
-    input input_idx_clr,
-    input input_idx_inc,
-    input timer_load,
-    input timer_en,
-    input score_inc,
-    input level_inc,
+    input one_sec_tick,
+    input start_pulse,
+    input input_valid,
     input input_arrow[2],
-    input reverse_flag,
+    output score_out[8],
+    output timer_out[8],
+    output seq_len_out[4],
+    output display_idx_out[4],
+    output input_idx_out[4],
     output current_show_arrow[2],
     output expected_arrow[2],
-    output match,
-    output show_done,
-    output last_input,
-    output timeout,
-    output timer_val[8],
-    output score_val[8],
-    output seq_len_val[4],
-    output input_idx_val[4],
-    output display_idx_val[4]
+    output latched_arrow_out[2],
+    output rev_flag_out,
+    output display_mode[3],
+    output show_phase_out,
+    output in_wait_input
 ) {
-    const TIMER_INIT = 8d8
-    const SEQ_HARDCODED = 30b10_0001_1110_0001_1110_0001_1111
     .clk(clk) {
-        dff seq[30](.rst(rst))
-        dff seq_len[4](#INIT(4d2), .rst(rst))
-        dff display_idx[4](.rst(rst))
-        dff input_idx[4](.rst(rst))
-        dff timer[8](#INIT(TIMER_INIT), .rst(rst))
-        dff score[8](.rst(rst))
-        dff rev_flag(.rst(rst))
-        dff latched_arrow[2](.rst(rst))
+        .rst(rst) {
+            dff seq[30]
+            dff rev_flag
+            counter slow_clk_ctr(#SIZE(1), #DIV(20))
+        }
+        random_number_generator rng(#SIZE(30), .slow_clk(slow_clk_ctr.value))
+        game_regfile regs(.rst(rst))
+        game_cu cu(.rst(rst),
+            .one_sec_tick(one_sec_tick),
+            .start_pulse(start_pulse),
+            .input_valid(input_valid)
+        )
     }
     sig show_shift[5]
     sig exp_shift[5]
@@ -43,58 +39,52 @@ module game_data (
     sig current_show_arrow_sig[2]
     sig expected_arrow_sig[2]
     always {
-        seq.d           = seq.q
-        seq_len.d       = seq_len.q
-        display_idx.d   = display_idx.q
-        input_idx.d     = input_idx.q
-        timer.d         = timer.q
-        score.d         = score.q
-        rev_flag.d      = rev_flag.q
-        latched_arrow.d = latched_arrow.q
-        if (seq_load) {
-            seq.d      = SEQ_HARDCODED
-            rev_flag.d = timer.q[0]
+        rng.refresh = cu.seq_load
+        seq.d       = seq.q
+        rev_flag.d  = rev_flag.q
+        if (cu.seq_load) {
+            seq.d      = rng.out
+            rev_flag.d = rng.out[0]
         }
-        if (level_inc) {
-            seq_len.d = seq_len.q + 1 
+        if (input_valid) {
+            regs.we   = 1
+            regs.wa   = d5
+            regs.data = input_arrow
+        } else {
+            regs.we   = cu.we
+            regs.wa   = cu.wa
+            regs.data = cu.data
         }
-        if (display_idx_clr)       {
-            display_idx.d = 0 
-        }
-        else if (display_idx_inc)  {
-            display_idx.d = display_idx.q + 1 
-        }
-        if (input_idx_clr)         {
-            input_idx.d = 0 
-        }
-        else if (input_idx_inc)    {
-            input_idx.d = input_idx.q + 1 
-        }
-        if (timer_load)            {
-            timer.d = TIMER_INIT 
-        }
-        else if (timer_en && timer.q > 0) {
-                        timer.d = timer.q - 1 
-                    }
-        if (score_inc) {
-                        score.d = score.q + 1 
-                    }
-        normal_idx  = input_idx.q
-        reverse_idx = seq_len.q - 1 - input_idx.q
-        show_shift = c{display_idx.q, 1b0}
-        exp_shift  = rev_flag.q ? c{reverse_idx, 1b0} : c{normal_idx, 1b0}
+        regs.ra1 = d0
+        regs.ra2 = d0
+        cu.rd_score       = regs.score_out
+        cu.rd_timer       = regs.timer_out
+        cu.rd_seq_len     = regs.seq_len_out
+        cu.rd_display_idx = regs.display_idx_out
+        cu.rd_input_idx   = regs.input_idx_out
+        cu.rd_latched     = regs.latched_arrow_out
+        cu.rd_rev_flag    = rev_flag.q
+        normal_idx  = regs.input_idx_out
+        reverse_idx = regs.seq_len_out - 4d1 - regs.input_idx_out
+        show_shift = c{regs.display_idx_out, 1b0}
+        exp_shift  = rev_flag.q ?
+                     c{reverse_idx, 1b0} :
+                     c{normal_idx, 1b0}
         current_show_arrow_sig = (seq.q >> show_shift) & 2b11
         expected_arrow_sig     = (seq.q >> exp_shift)  & 2b11
+        cu.current_show_arrow = current_show_arrow_sig
+        cu.expected_arrow     = expected_arrow_sig
+        score_out          = regs.score_out
+        timer_out          = regs.timer_out
+        seq_len_out        = regs.seq_len_out
+        display_idx_out    = regs.display_idx_out
+        input_idx_out      = regs.input_idx_out
         current_show_arrow = current_show_arrow_sig
         expected_arrow     = expected_arrow_sig
-        match      = (latched_arrow.q == expected_arrow_sig)
-        show_done  = (display_idx.q == seq_len.q)
-        last_input = (input_idx.q == seq_len.q - 4d1)
-        timeout    = (timer.q == 0)
-        timer_val       = timer.q
-        score_val       = score.q
-        seq_len_val     = seq_len.q
-        input_idx_val   = input_idx.q
-        display_idx_val = display_idx.q
+        latched_arrow_out  = regs.latched_arrow_out
+        rev_flag_out       = rev_flag.q
+        display_mode       = cu.display_mode
+        show_phase_out     = cu.show_phase_out
+        in_wait_input      = cu.in_wait_input
     }
 }
