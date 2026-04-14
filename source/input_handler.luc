@@ -1,0 +1,39 @@
+module input_handler ( // must implement debounce
+    input clk,
+    input rst,
+
+    input btn_up,
+    input btn_down,
+    input btn_left,
+    input btn_right,
+
+    output input_valid,
+    output input_arrow[2]
+) {
+
+    sig up_pulse
+    sig down_pulse
+    sig left_pulse
+    sig right_pulse
+
+    // 실제 구현에서는 conditioner + edge detector 붙이기
+    always {
+        up_pulse = btn_up
+        down_pulse = btn_down
+        left_pulse = btn_left
+        right_pulse = btn_right
+
+        input_valid = up_pulse | down_pulse | left_pulse | right_pulse
+        input_arrow = 0
+
+        if (up_pulse) {
+            input_arrow = 2b00
+        } else if (down_pulse) {
+            input_arrow = 2b01
+        } else if (left_pulse) {
+            input_arrow = 2b10
+        } else if (right_pulse) {
+            input_arrow = 2b11
+        }
+    }
+}
