@@ -1,4 +1,4 @@
-module display_controller (
+module display_control (
     input display_mode[3],
     input current_show_arrow[2],
     input timer_val[8],
@@ -6,45 +6,41 @@ module display_controller (
     input reverse_flag,
     input show_phase,
 
-    output arrow_leds[4],
-    output seg_val[8],
-    output reverse_led
+    output show_arrow,      // 1 = show bitmap on matrix
+    output arrow_code[2],   // which arrow to show
+    output reverse_led,     // mirrors reverse_flag
+    output seg_val[8] ,
+    output gameover// not used by top directly, seg_mux handles this
 ) {
-
     always {
-        arrow_leds = 0
-        seg_val = 0
+        show_arrow  = 0
+        arrow_code  = 0
         reverse_led = reverse_flag
+        seg_val     = 0
 
         case (display_mode) {
-            0: 
-                arrow_leds = 4b0000
-                seg_val = 8h00
-           
+            0: // IDLE
+                show_arrow = 0
+                seg_val    = 0
 
-            1: 
+            1: // SHOW_SEQUENCE
+                seg_val = 0
                 if (!show_phase) {
-                    case (current_show_arrow) {
-                        2b00: arrow_leds = 4b0001
-                        2b01: arrow_leds = 4b0010
-                        2b10: arrow_leds = 4b0100
-                        2b11: arrow_leds = 4b1000
-                    }
+                    show_arrow = 1
+                    arrow_code = current_show_arrow
                 } else {
-                    arrow_leds = 4b0000
+                    show_arrow = 0
                 }
-                seg_val = 8h00
-            
 
-            2: 
-                arrow_leds = 4b0000
-                seg_val = timer_val
-            
+            2: // WAIT_INPUT
+                show_arrow = 0
+                seg_val    = timer_val
 
-            3: 
-                arrow_leds = 4b1111
-                seg_val = score_val
-            
+            3: // GAME_OVER
+                show_arrow = 0
+                seg_val    = score_val
         }
+        
+        gameover = (display_mode == 3)
     }
 }
