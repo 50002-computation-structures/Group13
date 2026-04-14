@@ -1,11 +1,9 @@
 module game_cu (
     input clk,
     input rst,
-
     input start,
     input show_tick,
     input one_sec_tick,
-
     input show_done,
     input input_valid,
     input match,
@@ -14,7 +12,6 @@ module game_cu (
     input show_phase,
     input display_idx_val[4],
     input seq_len_val[4],
-
     output display_idx_clr,
     output display_idx_inc,
     output input_idx_clr,
@@ -24,78 +21,62 @@ module game_cu (
     output seq_load,
     output score_inc,
     output level_inc,
-
     output display_mode[3],
     output in_wait_input
 ) {
-
     enum States {
-        IDLE,             // wait until start pressed
-        INIT_LEVEL,       // initialize 
-        SHOW_SEQUENCE,    // sequence -> display
-        WAIT_INPUT,       // wait input & timer--
-        CHECK_INPUT,      // != -> gameover
-        GAME_OVER         // score display
+        IDLE,
+        INIT_LEVEL,
+        SHOW_SEQUENCE,
+        WAIT_INPUT,
+        CHECK_INPUT,
+        GAME_OVER
     }
-
     .clk(clk) {
         dff state[$width(States)](#INIT(States.IDLE), .rst(rst))
     }
-
     always {
         state.d = state.q
-
         display_idx_clr = 0
         display_idx_inc = 0
-        input_idx_clr = 0
-        input_idx_inc = 0
-        timer_load = 0
-        timer_en = 0
-        seq_load = 0
-        score_inc = 0
-        level_inc = 0
-
-        display_mode = 0
-        in_wait_input = 0
-
+        input_idx_clr   = 0
+        input_idx_inc   = 0
+        timer_load      = 0
+        timer_en        = 0
+        seq_load        = 0
+        score_inc       = 0
+        level_inc       = 0
+        display_mode    = 0
+        in_wait_input   = 0
         case (state.q) {
             States.IDLE:
                 display_mode = 0
-                if (start) {
-                    state.d = States.INIT_LEVEL
-                }
-
+                if (start) { state.d = States.INIT_LEVEL }
             States.INIT_LEVEL:
-                seq_load = 1
+                seq_load        = 1
                 display_idx_clr = 1
-                input_idx_clr = 1
-                timer_load = 1
-                display_mode = 0
-                state.d = States.SHOW_SEQUENCE
-
+                input_idx_clr   = 1
+                timer_load      = 1
+                display_mode    = 0
+                state.d         = States.SHOW_SEQUENCE
             States.SHOW_SEQUENCE:
                 display_mode = 1
                 if (show_tick && show_phase) {
                     if (display_idx_val == seq_len_val - 1) {
                         timer_load = 1
-                        state.d = States.WAIT_INPUT
+                        state.d    = States.WAIT_INPUT
                     } else {
                         display_idx_inc = 1
                     }
-                }    
-
+                }
             States.WAIT_INPUT:
-                display_mode = 2
+                display_mode  = 2
                 in_wait_input = 1
-                if (one_sec_tick) {
-                    timer_en = 1
-                }
-                if (timeout) {
-                    state.d = States.GAME_OVER
-                } else if (input_valid) {
-                    state.d = States.CHECK_INPUT
-                }
-
+                if (one_sec_tick) { timer_en = 1 }
+                if (timeout)      { state.d = States.GAME_OVER }
+                else if (input_valid) {
+                            state.d = States.CHECK_INPUT 
+                        }
             States.CHECK_INPUT:
                 display_mode = 2
                 if (match) {
@@ -103,19 +84,16 @@ module game_cu (
                     if (last_input) {
                         score_inc = 1
                         level_inc = 1
-                        state.d = States.INIT_LEVEL
+                        state.d   = States.INIT_LEVEL
                     } else {
                         state.d = States.WAIT_INPUT
                     }
                 } else {
                     state.d = States.GAME_OVER
                 }
-
             States.GAME_OVER:
                 display_mode = 3
-                if (start) {
-                    state.d = States.IDLE
-                }
+                if (start) { state.d = States.IDLE }
         }
     }
 }
