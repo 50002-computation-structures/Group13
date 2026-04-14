@@ -1,3 +1,4 @@
+// Register bank for score/timer/indices and last latched player input.
 module game_regfile (
     input clk,
     input rst,
@@ -13,8 +14,7 @@ module game_regfile (
     output seq_len_out[4],
     output display_idx_out[4],
     output input_idx_out[4],
-    output latched_arrow_out[2],
-    output rev_flag_out
+    output latched_arrow_out[2]
 ) {
     .clk(clk) {
         .rst(rst) {
@@ -24,11 +24,11 @@ module game_regfile (
             dff display_idx[32](#INIT(0))
             dff input_idx[32](#INIT(0))
             dff latched_arrow[32](#INIT(0))
-            dff temp[32](#INIT(0))
-            dff rev_flag[32](#INIT(0))
         }
     }
+
     always {
+        // write port
         if (we) {
             case (wa) {
                 d0: score.d         = data
@@ -37,10 +37,11 @@ module game_regfile (
                 d3: display_idx.d   = data
                 d4: input_idx.d     = data
                 d5: latched_arrow.d = data
-                d6: temp.d          = data
-                d7: rev_flag.d      = data
             }
         }
+
+        // Asynchronous-style read mux for source operand 1.
+        // read port 1
         case (ra1) {
             d0: rd1 = score.q
             d1: rd1 = timer.q
@@ -48,10 +49,11 @@ module game_regfile (
             d3: rd1 = display_idx.q
             d4: rd1 = input_idx.q
             d5: rd1 = latched_arrow.q
-            d6: rd1 = temp.q
-            d7: rd1 = rev_flag.q
             default: rd1 = 0
         }
+
+        // Asynchronous-style read mux for source operand 2.
+        // read port 2
         case (ra2) {
             d0: rd2 = score.q
             d1: rd2 = timer.q
@@ -59,16 +61,15 @@ module game_regfile (
             d3: rd2 = display_idx.q
             d4: rd2 = input_idx.q
             d5: rd2 = latched_arrow.q
-            d6: rd2 = temp.q
-            d7: rd2 = rev_flag.q
             default: rd2 = 0
         }
-        score_out         = score.q[7:0]
-        timer_out         = timer.q[7:0]
-        seq_len_out       = seq_len.q[3:0]
-        display_idx_out   = display_idx.q[3:0]
-        input_idx_out     = input_idx.q[3:0]
+
+        // Truncated public outputs used by display and control logic.
+        score_out        = score.q[7:0]
+        timer_out        = timer.q[7:0]
+        seq_len_out      = seq_len.q[3:0]
+        display_idx_out  = display_idx.q[3:0]
+        input_idx_out    = input_idx.q[3:0]
         latched_arrow_out = latched_arrow.q[1:0]
-        rev_flag_out      = rev_flag.q[0]
     }
 }

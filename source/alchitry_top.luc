@@ -1,34 +1,154 @@
+// Top-level integration: wires input handling, game logic, LED matrix, and 7-seg output.
 module alchitry_top (
-    input clk,              // 100MHz clock
-    input rst_n,            // reset button (active low)
-    output led[8],          // 8 user controllable LEDs
-    input usb_rx,           // USB->Serial input
-    output usb_tx,          // USB->Serial output
-    output io_led[3][8],    // LEDs on IO Shield
-    output io_segment[8],   // 7-segment LEDs on IO Shield
-    output io_select[4],    // Digit select on IO Shield
-    input io_button[5],     // 5 buttons on IO Shield
-    input io_dip[3][8]      // DIP switches on IO Shield
+    input clk,
+    input rst_n,
+    output led[8],
+    input usb_rx,
+    output usb_tx,
+    output io_led[3][8],
+    output io_segment[8],
+    output io_select[4],
+    input io_button[5],
+    input io_dip[3][8]
 ) {
+    const CHAIN = 1
+    const SPEED = 4
+    const CLK_FREQ = 100000000
 
-    sig rst                 // reset signal
+    sig rst
+    sig one_sec_tick
+    sig input_valid
+    sig input_arrow[2]
+    sig start_pulse
+
+    reset_conditioner reset_cond(.clk(clk))
+
+    button_conditioner btn_up(#CLK_FREQ(CLK_FREQ), .clk(clk))
+    button_conditioner btn_down(#CLK_FREQ(CLK_FREQ), .clk(clk))
+    button_conditioner btn_left(#CLK_FREQ(CLK_FREQ), .clk(clk))
+    button_conditioner btn_right(#CLK_FREQ(CLK_FREQ), .clk(clk))
+    button_conditioner btn_start(#CLK_FREQ(CLK_FREQ), .clk(clk))
+
+    display_control dc()
 
     .clk(clk) {
-        // The reset conditioner is used to synchronize the reset signal to the FPGA
-        // clock. This ensures the entire FPGA comes out of reset at the same time.
-        reset_conditioner reset_cond
+        edge_detector up_edge(#RISE(1), #FALL(0))
+        edge_detector down_edge(#RISE(1), #FALL(0))
+        edge_detector left_edge(#RISE(1), #FALL(0))
+        edge_detector right_edge(#RISE(1), #FALL(0))
+        edge_detector start_edge(#RISE(1), #FALL(0))
+
+        .rst(rst) {
+            dff sec_ctr[27]
+            game_data gd()
+            matrix_controller mc(#CHAIN(CHAIN), #SPEED(SPEED))
+            seg_mux smux()
+        }
     }
-    
+
     always {
-        reset_cond.in = ~rst_n  // input raw inverted reset signal
-        rst = reset_cond.out    // conditioned reset
+        reset_cond.in = ~rst_n
+        rst    = reset_cond.out | (io_dip[1][0]&io_dip[1][2]&io_dip[1][3]&io_dip[1][4])
+        usb_tx = usb_rx
+
+        // ---- 1-second tick ----
+        sec_ctr.d    = sec_ctr.q + 1
+        one_sec_tick = 0
+        if (sec_ctr.q == 27d100_000_000) {
+            sec_ctr.d    = 0
+            one_sec_tick = 1
+        }
+
+        // ---- Button conditioning / debouncing ----
+        btn_up.in    = io_dip[1][2]
+        btn_down.in  = io_dip[1][0]
+        btn_left.in  = io_dip[1][3]
+        btn_right.in = io_dip[1][4]
+        btn_start.in = io_dip[1][3]&io_dip[1][4]
+
+        up_edge.in    = btn_up.out
+        down_edge.in  = btn_down.out
+        left_edge.in  = btn_left.out
+        right_edge.in = btn_right.out
+        start_edge.in = btn_start.out
+
+        // Convert one-cycle button edges into one directional code.
+        input_valid = up_edge.out | down_edge.out |
+                      left_edge.out | right_edge.out
+        input_arrow = 2b00
+        if (up_edge.out)         {
+            input_arrow = 2b11 
+        }
+        else if (right_edge.out) {
+            input_arrow = 2b01 
+        }
+        else if (left_edge.out)  {
+            input_arrow = 2b10 
+        }
         
-        led = 8h00              // turn LEDs off
-        
-        usb_tx = usb_rx         // loop serial port
-        
-        io_led = 3x{{8h00}}
-        io_segment = 8hff
-        io_select = 4hf
+        mc.gameover  = dc.gameover
+
+        start_pulse = start_edge.out
+
+        // Feed sampled timing/input events into game datapath.
+        gd.one_sec_tick = one_sec_tick
+        gd.start_pulse  = start_pulse
+        gd.input_valid  = input_valid
+        gd.input_arrow  = input_arrow
+
+        // ---- display_controller ----
+        dc.display_mode       = gd.display_mode
+        dc.current_show_arrow = gd.current_show_arrow
+        dc.timer_val          = gd.timer_out
+        dc.score_val          = gd.score_out
+        dc.reverse_flag       = gd.rev_flag_out
+        dc.show_phase         = gd.show_phase_out
+
+        // ---- matrix_controller ----
+        mc.show_arrow = dc.show_arrow
+        mc.arrow_code = dc.arrow_code
+
+        // ---- seg_mux ----
+        smux.score_val = gd.score_out
+        smux.timer_val = gd.timer_out
+
+        // ---- physical outputs ----
+        // MAX7219 SPI signals are routed through io_segment pins.
+        io_segment    = 8h00
+        io_segment[4] = mc.max7219_data
+        io_segment[3] = mc.max7219_load
+        io_segment[1] = mc.max7219_clock
+
+        io_select    = smux.io_select
+        io_led       = 3x{{8h00}}
+        io_led[1][6] = smux.seg_bits[0]
+        io_led[1][7] = smux.seg_bits[1]
+        io_led[2][0] = smux.seg_bits[2]
+        io_led[2][1] = smux.seg_bits[3]
+        io_led[2][2] = smux.seg_bits[4]
+        io_led[2][3] = smux.seg_bits[5]
+        io_led[2][4] = smux.seg_bits[6]
+
+        // Mirror button states to LEDs for quick hardware debugging.
+        io_led[1][2] = io_dip[1][2]
+        io_led[1][0] = io_dip[1][0]
+        io_led[1][3] = io_dip[1][3]
+        io_led[1][4] = io_dip[1][4]
+        io_led[1][5] = input_valid
+
+        // reverse mode LED
+        io_led[2][5] = ~gd.rev_flag_out
+
+        // debug
+        led      = 8h00
+        led[2:0] = gd.display_mode
+        led[3]   = gd.rev_flag_out
+        led[5]   = mc.debug_sclk
+        led[6]   = mc.debug_done
+
+        io_led[0][4]   = mc.debug_done
+        io_led[0][5]   = mc.debug_sclk
+        io_led[0][1:0] = gd.expected_arrow
+        io_led[0][3:2] = gd.current_show_arrow
     }
 }

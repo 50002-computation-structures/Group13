@@ -1,3 +1,4 @@
+// Game datapath: sequence storage, ALU muxing, register file, and RNG integration.
 module game_data (
     input clk,
     input rst,
@@ -32,20 +33,90 @@ module game_data (
             .input_valid(input_valid)
         )
     }
+
+    alu game_alu()
+
     sig show_shift[5]
     sig exp_shift[5]
     sig normal_idx[4]
     sig reverse_idx[4]
     sig current_show_arrow_sig[2]
     sig expected_arrow_sig[2]
+    sig alu_a[32]
+    sig alu_b[32]
+
     always {
+        // Request a fresh pseudo-random sequence whenever CU starts a level.
         rng.refresh = cu.seq_load
-        seq.d       = seq.q
-        rev_flag.d  = rev_flag.q
+
+        seq.d      = seq.q
+        rev_flag.d = rev_flag.q
+
         if (cu.seq_load) {
+            // Snapshot new sequence and mode bit (normal/reverse) at level start.
             seq.d      = rng.out
             rev_flag.d = rng.out[0]
         }
+
+        // ---- Arrow extraction ----
+        normal_idx  = regs.input_idx_out
+        reverse_idx = regs.seq_len_out - 4d1 - regs.input_idx_out
+
+        show_shift = c{regs.display_idx_out, 1b0}
+        exp_shift  = rev_flag.q ?
+                     c{reverse_idx, 1b0} :
+                     c{normal_idx, 1b0}
+
+        current_show_arrow_sig = (seq.q >> show_shift) & 2b11
+        expected_arrow_sig     = (seq.q >> exp_shift)  & 2b11
+
+        // ---- asel mux ----
+        // 3b000 = score
+        // 3b001 = timer
+        // 3b010 = seq_len
+        // 3b011 = constant 10
+        // 3b100 = display_idx
+        // 3b101 = input_idx
+        // 3b110 = latched_arrow
+        
+        // CU chooses ALU input-A source (reg fields or constant 10).
+        case (cu.asel) {
+            3b000: alu_a = regs.score_out
+            3b001: alu_a = regs.timer_out
+            3b010: alu_a = regs.seq_len_out
+            3b011: alu_a = 32d10
+            3b100: alu_a = regs.display_idx_out
+            3b101: alu_a = regs.input_idx_out
+            3b110: alu_a = regs.latched_arrow_out
+            default: alu_a = 0
+        }
+
+        // ---- bsel mux ----
+        // 3b000 = rd2
+        // 3b001 = 1
+        // 3b010 = 2
+        // 3b011 = expected_arrow
+        // 3b100 = 3
+        // 3b101 = 5
+        case (cu.bsel) {
+            3b000: alu_b = regs.rd2
+            3b001: alu_b = 32d1
+            3b010: alu_b = 32d2
+            3b011: alu_b = expected_arrow_sig
+            3b100: alu_b = 32d3
+            3b101: alu_b = 32d5
+            default: alu_b = 0
+        }
+
+        // ---- ALU ----
+        game_alu.a     = alu_a
+        game_alu.b     = alu_b
+        game_alu.alufn = cu.alufn
+
+        cu.alu_z   = game_alu.z
+        cu.alu_out = game_alu.out
+
+        // Input has write priority so player arrows are never missed.
         if (input_valid) {
             regs.we   = 1
             regs.wa   = d5
@@ -55,8 +126,11 @@ module game_data (
             regs.wa   = cu.wa
             regs.data = cu.data
         }
+
         regs.ra1 = d0
         regs.ra2 = d0
+
+        // Feed CU with current state registers for next-state decisions.
         cu.rd_score       = regs.score_out
         cu.rd_timer       = regs.timer_out
         cu.rd_seq_len     = regs.seq_len_out
@@ -64,16 +138,10 @@ module game_data (
         cu.rd_input_idx   = regs.input_idx_out
         cu.rd_latched     = regs.latched_arrow_out
         cu.rd_rev_flag    = rev_flag.q
-        normal_idx  = regs.input_idx_out
-        reverse_idx = regs.seq_len_out - 4d1 - regs.input_idx_out
-        show_shift = c{regs.display_idx_out, 1b0}
-        exp_shift  = rev_flag.q ?
-                     c{reverse_idx, 1b0} :
-                     c{normal_idx, 1b0}
-        current_show_arrow_sig = (seq.q >> show_shift) & 2b11
-        expected_arrow_sig     = (seq.q >> exp_shift)  & 2b11
+
         cu.current_show_arrow = current_show_arrow_sig
         cu.expected_arrow     = expected_arrow_sig
+
         score_out          = regs.score_out
         timer_out          = regs.timer_out
         seq_len_out        = regs.seq_len_out

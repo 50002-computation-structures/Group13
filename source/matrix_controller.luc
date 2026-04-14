@@ -1,3 +1,4 @@
+// Selects arrow/gameover bitmap and triggers MAX7219 driver updates on changes.
 module matrix_controller #(
     CHAIN = 1: CHAIN > 0,
     SPEED = 4: SPEED >= 4
@@ -15,9 +16,9 @@ module matrix_controller #(
     output debug_driver_state[4]
 ) {
     const UP_BMP = {
+        8b00010000,
         8b00111000,
         8b01111100,
-        8b10111010,
         8b00111000,
         8b00111000,
         8b00111000,
@@ -25,13 +26,13 @@ module matrix_controller #(
         8b00000000
     }
     const RIGHT_BMP = {
-        8b00001000,
-        8b00001100,
+        8b00000000,
+        8b00000100,
         8b11111110,
         8b11111111,
         8b11111110,
-        8b00001100,
-        8b00001000,
+        8b00000100,
+        8b00000000,
         8b00000000
     }
     const DOWN_BMP = {
@@ -40,18 +41,18 @@ module matrix_controller #(
         8b00111000,
         8b00111000,
         8b00111000,
-        8b00111000,
         8b01111100,
-        8b00111000
+        8b00111000,
+        8b00010000
     }
     const LEFT_BMP = {
-        8b00010000,
-        8b00110000,
+        8b00000000,
+        8b00100000,
         8b01111111,
         8b11111111,
         8b01111111,
-        8b00110000,
-        8b00010000,
+        8b00100000,
+        8b00000000,
         8b00000000
     }
     const BLANK_BMP = {
@@ -90,6 +91,7 @@ module matrix_controller #(
     sig bitmap[8][8]
 
     always {
+        // Keep debug buses "used" to prevent trimming in synthesis.
         sig unused[1]
         unused = drv.debug_state[0] | drv.debug_counter[0] |
                  drv.debug_writer[0] | drv.debug_data[0] |
@@ -97,6 +99,7 @@ module matrix_controller #(
                  drv.debug_segment_current[0] | drv.debug_segment_original[0] |
                  drv.debug_digit_index_original[0]
 
+        // Select the matrix frame to present this cycle.
         if (gameover) {
             bitmap = GAMEOVER_BMP
         } else if (show_arrow) {
@@ -120,6 +123,7 @@ module matrix_controller #(
         prev_code.d     = arrow_code
         prev_gameover.d = gameover
 
+        // Mark frame dirty whenever input display intent changes.
         if ((show_arrow != prev_show.q[0]) ||
             (arrow_code != prev_code.q)    ||
             (gameover   != prev_gameover.q[0])) {
@@ -130,6 +134,7 @@ module matrix_controller #(
             done_r.d = drv.done
         }
 
+        // Start a fresh MAX7219 transfer only when previous transfer is done.
         if (done_r.q && pending_r.q) {
             drv.new_input_present = 1
             done_r.d    = 0

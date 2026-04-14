@@ -1,9 +1,12 @@
+// Main game control FSM (sequence show, input wait, scoring, game over).
 module game_cu (
     input clk,
     input rst,
+
     input one_sec_tick,
     input start_pulse,
     input input_valid,
+
     input rd_score[32],
     input rd_timer[32],
     input rd_seq_len[32],
@@ -11,18 +14,33 @@ module game_cu (
     input rd_input_idx[32],
     input rd_latched[32],
     input rd_rev_flag[32],
+
     input current_show_arrow[2],
     input expected_arrow[2],
+
+    input alu_z,
+    input alu_out[32],
+
     output we,
     output wa[3],
     output data[32],
+
+    output alufn[6],
+    output asel[3],
+    output bsel[3],
+
     output seq_load,
     output display_mode[3],
     output show_phase_out,
     output in_wait_input
 ) {
+    const ALU_ADD  = 6h00
+    const ALU_SUB  = 6h01
+    const ALU_PASS = 6h1A
+
     const SHOW_TIME  = 27d67_000_000
     const BLANK_TIME = 27d33_000_000
+
     enum States {
         IDLE,
         INIT_SCORE,
@@ -37,60 +55,79 @@ module game_cu (
         LEVEL_CLEAR_SEQLEN,
         GAME_OVER
     }
+
     .clk(clk) {
         dff state[$width(States)](#INIT(States.IDLE), .rst(rst))
         dff show_phase_dff(.rst(rst))
         dff show_timer[27](.rst(rst))
     }
+
     always {
         state.d          = state.q
         show_phase_dff.d = show_phase_dff.q
         show_timer.d     = show_timer.q
-        we   = 0
-        wa   = d6
-        data = 0
+
+        we    = 0
+        wa    = d6
+        data  = 0
+        alufn = ALU_ADD
+        asel  = 3b000
+        bsel  = 3b000
+
         seq_load       = 0
         display_mode   = 0
         in_wait_input  = 0
         show_phase_out = show_phase_dff.q
+
         case (state.q) {
+
             States.IDLE:
                 display_mode     = 0
                 show_phase_dff.d = 0
                 show_timer.d     = 0
                 if (start_pulse) {
-                    we      = 1
-                    wa      = d0
-                    data    = 0
+                    we   = 1
+                    wa   = d0    // score = 0
+                    data = 0
                     state.d = States.INIT_SCORE
                 }
+
             States.INIT_SCORE:
-                we      = 1
-                wa      = d2
-                data    = 2
+                we   = 1
+                wa   = d2    // seq_len = 2
+                data = 2
                 state.d = States.INIT_LEVEL
+
             States.INIT_LEVEL:
                 seq_load         = 1
                 show_phase_dff.d = 0
                 show_timer.d     = 0
                 display_mode     = 0
-                we      = 1
-                wa      = d3
-                data    = 0
+                we   = 1
+                wa   = d3    // display_idx = 0
+                data = 0
                 state.d = States.INIT_INPUT_IDX
+
             States.INIT_INPUT_IDX:
-                we      = 1
-                wa      = d4
-                data    = 0
+                we   = 1
+                wa   = d4    // input_idx = 0
+                data = 0
                 state.d = States.INIT_TIMER
+
             States.INIT_TIMER:
-                we      = 1
-                wa      = d1
-                data    = 10
+                // timer = 10 via ALU PASS A (asel=011 gives constant 10)
+                alufn = ALU_PASS
+                asel  = 3b011
+                we    = 1
+                wa    = d1
+                data  = alu_out
                 state.d = States.SHOW_SEQUENCE
+
             States.SHOW_SEQUENCE:
                 display_mode = 1
+                // Shared timer controls both "arrow shown" and "blank gap" windows.
                 show_timer.d = show_timer.q + 1
+
                 if (show_phase_dff.q == 0) {
                     if (show_timer.q == SHOW_TIME) {
                         show_timer.d     = 0
@@ -101,61 +138,101 @@ module game_cu (
                         show_timer.d     = 0
                         show_phase_dff.d = 0
                         if (rd_display_idx + 1 == rd_seq_len) {
-                            we      = 1
-                            wa      = d1
-                            data    = 10
+                            // Finished showing all arrows: reload player countdown timer.
+                            alufn = ALU_PASS
+                            asel  = 3b011
+                            we    = 1
+                            wa    = d1
+                            data  = alu_out
                             state.d = States.WAIT_INPUT
                         } else {
-                            we      = 1
-                            wa      = d3
-                            data    = rd_display_idx + 1
+                            // display_idx++ via ALU ADD
+                            alufn = ALU_ADD
+                            asel  = 3b100  // display_idx
+                            bsel  = 3b001  // +1
+                            we    = 1
+                            wa    = d3
+                            data  = alu_out
                             state.d = States.SHOW_SEQUENCE
                         }
                     }
                 }
+
             States.WAIT_INPUT:
                 display_mode  = 2
                 in_wait_input = 1
+                // Show-phase timer is not used while waiting for player input.
                 show_timer.d  = 0
+
                 if (one_sec_tick && rd_timer > 0) {
-                    we   = 1
-                    wa   = d1
-                    data = rd_timer - 1
+                    // timer-- via ALU SUB
+                    alufn = ALU_SUB
+                    asel  = 3b001  // timer
+                    bsel  = 3b001  // -1
+                    we    = 1
+                    wa    = d1
+                    data  = alu_out
                 }
-                if (rd_timer == 0)    { state.d = States.GAME_OVER }
-                else if (input_valid) { state.d = States.CHECK_MATCH }
+
+                if (rd_timer == 0) {
+                    // Timeout is a hard fail for this round.
+                    state.d = States.GAME_OVER
+                } else if (input_valid) {
+                    state.d = States.CHECK_MATCH
+                }
+
             States.CHECK_MATCH:
                 display_mode = 2
+                // Compare the last latched player arrow against expected sequence arrow.
                 if (rd_latched[1:0] == expected_arrow) {
-                    if (rd_input_idx + 1 == rd_seq_len) { state.d = States.LEVEL_CLEAR_SCORE }
-                    else                                 { state.d = States.NEXT_ARROW }
+                    if (rd_input_idx + 1 == rd_seq_len) {
+                        state.d = States.LEVEL_CLEAR_SCORE
+                    } else {
+                        state.d = States.NEXT_ARROW
+                    }
                 } else {
                     state.d = States.GAME_OVER
                 }
+
             States.NEXT_ARROW:
                 display_mode = 2
-                we      = 1
-                wa      = d4
-                data    = rd_input_idx + 1
+                // input_idx++ via ALU ADD
+                alufn = ALU_ADD
+                asel  = 3b101  // input_idx
+                bsel  = 3b001  // +1
+                we    = 1
+                wa    = d4
+                data  = alu_out
                 state.d = States.WAIT_INPUT
+
             States.LEVEL_CLEAR_SCORE:
                 display_mode = 2
-                we   = 1
-                wa   = d0
-                data = rd_rev_flag[0] ? rd_score + 5 : rd_score + 3
+                // score += rev_flag ? 5 : 3 via ALU ADD
+                alufn = ALU_ADD
+                asel  = 3b000  // score
+                bsel  = rd_rev_flag[0] ? 3b101 : 3b100  // +5 or +3
+                we    = 1
+                wa    = d0
+                data  = alu_out
                 state.d = States.LEVEL_CLEAR_SEQLEN
+
             States.LEVEL_CLEAR_SEQLEN:
                 display_mode = 2
-                we   = 1
-                wa   = d2
-                data = (rd_seq_len < 15) ? rd_seq_len + 1 : rd_seq_len
+                // seq_len++ via ALU ADD (if < 15)
+                alufn = ALU_ADD
+                asel  = 3b010  // seq_len
+                bsel  = 3b001  // +1
+                we    = (rd_seq_len < 15) ? 1 : 0
+                wa    = d2
+                data  = alu_out
                 state.d = States.INIT_LEVEL
+
             States.GAME_OVER:
                 display_mode = 3
                 if (start_pulse) {
-                    we      = 1
-                    wa      = d0
-                    data    = 0
+                    we   = 1
+                    wa   = d0
+                    data = 0
                     state.d = States.IDLE
                 }
         }

@@ -1,0 +1,98 @@
+// 4-digit seven-segment multiplexer for score and timer display.
+module seg_mux (
+    input clk,
+    input rst,
+
+    input score_val[8],
+    input timer_val[8],
+
+    output io_select[4],
+    output seg_bits[7]
+) {
+    seven_seg seg()
+
+    .clk(clk) {
+        .rst(rst) {
+            dff ctr[16]
+        }
+    }
+
+    sig digit_sel[2]
+    sig cur_val[8]
+    sig ones_digit[4]
+    sig tens_digit[4]
+
+    always {
+        ctr.d     = ctr.q + 1
+        // Use high counter bits so each digit is visible long enough to avoid flicker.
+        digit_sel = ctr.q[15:14]
+
+        if (digit_sel[1] == 0) {
+            cur_val = score_val
+        } else {
+            cur_val = timer_val
+        }
+
+        // ones = cur_val % 10
+        // tens = cur_val / 10
+        // Lucid has no % or / operator here, so use a lookup table.
+        case (cur_val) {
+            8d0:   ones_digit = 4d0; tens_digit = 4d0 
+            8d1:   ones_digit = 4d1; tens_digit = 4d0 
+            8d2:   ones_digit = 4d2; tens_digit = 4d0
+            8d3:   ones_digit = 4d3; tens_digit = 4d0 
+            8d4:   ones_digit = 4d4; tens_digit = 4d0 
+            8d5:   ones_digit = 4d5; tens_digit = 4d0 
+            8d6:   ones_digit = 4d6; tens_digit = 4d0 
+            8d7:   ones_digit = 4d7; tens_digit = 4d0 
+            8d8:   ones_digit = 4d8; tens_digit = 4d0 
+            8d9:   ones_digit = 4d9; tens_digit = 4d0 
+            8d10:  ones_digit = 4d0; tens_digit = 4d1 
+            8d11:  ones_digit = 4d1; tens_digit = 4d1 
+            8d12:  ones_digit = 4d2; tens_digit = 4d1 
+            8d13:  ones_digit = 4d3; tens_digit = 4d1 
+            8d14:  ones_digit = 4d4; tens_digit = 4d1 
+            8d15:  ones_digit = 4d5; tens_digit = 4d1
+            8d16:  ones_digit = 4d6; tens_digit = 4d1 
+            8d17:  ones_digit = 4d7; tens_digit = 4d1 
+            8d18:  ones_digit = 4d8; tens_digit = 4d1 
+            8d19:  ones_digit = 4d9; tens_digit = 4d1 
+            8d20:  ones_digit = 4d0; tens_digit = 4d2 
+            8d21:  ones_digit = 4d1; tens_digit = 4d2 
+            8d22:  ones_digit = 4d2; tens_digit = 4d2 
+            8d23:  ones_digit = 4d3; tens_digit = 4d2 
+            8d24:  ones_digit = 4d4; tens_digit = 4d2 
+            8d25:  ones_digit = 4d5; tens_digit = 4d2 
+            8d26:  ones_digit = 4d6; tens_digit = 4d2 
+            8d27:  ones_digit = 4d7; tens_digit = 4d2 
+            8d28:  ones_digit = 4d8; tens_digit = 4d2 
+            8d29:  ones_digit = 4d9; tens_digit = 4d2 
+            8d30:  ones_digit = 4d0; tens_digit = 4d3 
+            default:  ones_digit = 4d0; tens_digit = 4d0 
+        }
+
+        io_select = 4b1111
+        seg.char  = 4h0
+
+        case (digit_sel) {
+            2b00:
+                // Score tens
+                io_select[3] = 0
+                seg.char = tens_digit
+            2b01:
+                // Score ones
+                io_select[2] = 4d0
+                seg.char = ones_digit
+            2b10:
+                // Timer tens
+                io_select[1] = 0
+                seg.char = tens_digit
+            2b11:
+                // Timer ones
+                io_select[0] = 0
+                seg.char = ones_digit
+        }
+
+        seg_bits = seg.segs
+    }
+}

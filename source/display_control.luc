@@ -1,3 +1,4 @@
+// Display policy: maps game state to matrix arrow and 7-seg value.
 module display_control (
     input display_mode[3],
     input current_show_arrow[2],
