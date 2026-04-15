@@ -38,12 +38,6 @@
             {
                 "file": {
                     "type": "DiskFile",
-                    "path": "source/input_handler.luc"
-                }
-            },
-            {
-                "file": {
-                    "type": "DiskFile",
                     "path": "source/display_control.luc"
                 }
             }
