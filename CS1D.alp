@@ -20,13 +20,7 @@
             {
                 "file": {
                     "type": "Component",
-                    "path": "Conditioning/button_conditioner.luc"
-                }
-            },
-            {
-                "file": {
-                    "type": "Component",
-                    "path": "Conditioning/edge_detector.luc"
+                    "path": "Pulses/edge_detector.luc"
                 }
             },
             {
@@ -99,6 +93,24 @@
                 "file": {
                     "type": "DiskFile",
                     "path": "source/seg_mux.luc"
+                }
+            },
+            {
+                "file": {
+                    "type": "Component",
+                    "path": "Miscellaneous/counter.luc"
+                }
+            },
+            {
+                "file": {
+                    "type": "Component",
+                    "path": "Miscellaneous/pipeline.luc"
+                }
+            },
+            {
+                "file": {
+                    "type": "Component",
+                    "path": "Conditioning/button_conditioner.luc"
                 }
             }
         ],
