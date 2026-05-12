@@ -4,6 +4,10 @@
 
 A fast-paced, single-player memory challenge built on the Alchitry Au FPGA. Players must recall and reproduce increasingly complex sequences of directional arrows under time pressure to achieve the highest score possible.
 
+<p align="center">
+  <img src="images/final_prototype.jpeg" alt="Brain Healer final prototype" width="500">
+</p>
+
 ---
 
 ## Team Members
@@ -87,6 +91,10 @@ This mechanic is entirely random per level, so the player cannot anticipate it i
 
 The enclosure is constructed from **plywood panels** assembled with glue.
 
+<p align="center">
+  <img src="images/enclosure_sketch.jpeg" alt="Brain Healer enclosure sketch with dimensions" width="650">
+</p>
+
 **Dimensions:**
 
 | Element | Size |
@@ -96,6 +104,23 @@ The enclosure is constructed from **plywood panels** assembled with glue.
 | 7-segment displays | 2.5 × 1.9 cm each |
 | Reverse mode indicator | 10.4 × 9.5 cm area |
 | Front panel slope height | 11 cm |
+
+**CAD drawings (custom-cut wood panels):**
+
+<p align="center">
+  <img src="images/cad_button_back.jpeg" alt="Button plate and back plate CAD" width="700"><br>
+  <em>Button plate (with arcade button holes) and back plate</em>
+</p>
+
+<p align="center">
+  <img src="images/cad_base_side.jpeg" alt="Base plate and side plate CAD" width="700"><br>
+  <em>Base plate and side plate</em>
+</p>
+
+<p align="center">
+  <img src="images/cad_top_display.jpeg" alt="Top plate, display plate, and second side plate CAD" width="700"><br>
+  <em>Top plate, display plate (with cutouts for 7-seg displays + LED matrix), and second side plate</em>
+</p>
 
 ### Design Inspirations
 
@@ -137,6 +162,17 @@ We adapted this concept for a physical hardware interface, replacing the screen-
 | Red LED + current-limiting resistor | 2 | Resistor in series between VCC and LED anode; cathode to FPGA signal pin |
 | **Total estimated joints** | **~41** | |
 
+<p align="center">
+  <img src="images/perfboard_top.jpeg" alt="Perf board soldering of arcade buttons" width="450"><br>
+  <em>Perf board — soldering of arcade buttons<br>
+  Green = Signal (LED) · Blue = Signal (Btn) · Red = Voltage · Black = Ground</em>
+</p>
+
+<p align="center">
+  <img src="images/breadboard.jpeg" alt="Breadboard with 7-segment + red LED" width="450"><br>
+  <em>Breadboarding — 7-segment displays + red LED with current-limiting resistors</em>
+</p>
+
 ---
 
 ## Electronic Design
@@ -155,6 +191,10 @@ We adapted this concept for a physical hardware interface, replacing the screen-
 
 ### Datapath
 
+<p align="center">
+  <img src="images/datapath.jpeg" alt="Brain Healer datapath diagram" width="800">
+</p>
+
 The datapath consists of:
 
 - A register file
@@ -163,6 +203,8 @@ The datapath consists of:
 - An ALU
 - Multiple multiplexers (ASEL, BSEL, write mux)
 - Combinational logic blocks for arrow extraction and index calculation
+
+🔗 **High-res datapath:** [Miro Board](https://miro.com/app/board/uXjVGtIC5-o=/?moveToWidget=3458764667759788518&cot=14)
 
 #### 1. Register File
 
@@ -263,9 +305,15 @@ else:
 - Efficient bit-level extraction instead of memory arrays
 - Direct combinational comparison
 
-Overall, the datapath is designed with a strong emphasis on efficiency and modularity. The ALU is used selectively for arithmetic operations such as index updates and score computation, while simple comparisons are handled using direct combinational logic to reduce hardware overhead. Sequence elements are extracted using shift-and-mask operations, avoiding the need for memory-based indexing and enabling constant-time access. The design minimizes resource usage through register reuse, multiplexed ALU inputs, and compact state representation.
+Overall, the datapath is designed with a strong emphasis on efficiency and modularity. The ALU is used selectively for arithmetic operations such as index updates and score computation, while simple comparisons are handled using direct combinational logic to reduce hardware overhead. Sequence elements are extracted using shift-and-mask operations, avoiding the need for memory-based indexing and enabling constant-time access.
 
 ### FSM
+
+<p align="center">
+  <img src="images/fsm_final.jpeg" alt="Final FSM diagram (12 states)" width="650">
+</p>
+
+🔗 **High-res FSM:** [Miro Board](https://miro.com/app/board/uXjVGtIC5-o=/?moveToWidget=3458764667672662385&cot=14)
 
 **States (12 total):**
 
@@ -298,7 +346,7 @@ GAME_OVER ←───────────────── CHECK_MATCH ─
 
 ## 2D — Hardware Optimisation
 
-To improve the efficiency, responsiveness, and overall resource utilisation of our FPGA-based system, we implemented several optimisations in both data structure design and hardware architecture. These optimisations focus on reducing hardware cost, improving execution speed, and ensuring scalability as the game complexity increases.
+To improve the efficiency, responsiveness, and overall resource utilisation of our FPGA-based system, we implemented several optimisations in both data structure design and hardware architecture.
 
 ### Datapath-Centric Design with Combinational Blocks
 
@@ -310,7 +358,22 @@ On the other hand, using specific combinational logic blocks for shifting and re
 
 ### FSM State Minimisation and Control Optimisation
 
-The finite state machine was carefully designed to minimise unnecessary states and transitions. Related operations are grouped into single states where possible. This reduces the number of state transitions required during execution, leading to faster system response and improved efficiency.
+The FSM went through three iterations: from over 30 states in Iteration 1, to a refined version in Iteration 2, and finally a minimised **12-state** final design.
+
+<p align="center">
+  <img src="images/fsm_iter1.jpeg" alt="FSM Iteration 1 — initial design with 30+ states" width="700"><br>
+  <em>Iteration 1 — initial design with 30+ states (every operation as a separate state)</em>
+</p>
+
+<p align="center">
+  <img src="images/fsm_iter2.jpeg" alt="FSM Iteration 2 — refined intermediate design" width="700"><br>
+  <em>Iteration 2 — refined intermediate design</em>
+</p>
+
+<p align="center">
+  <img src="images/fsm_final.jpeg" alt="FSM Final — 12 states" width="500"><br>
+  <em>Final FSM — 12 states</em>
+</p>
 
 **FSM minimization process:**
 
@@ -321,8 +384,6 @@ The finite state machine was carefully designed to minimise unnecessary states a
 | 3 states for timer (check / branch / decrement) | Inline condition inside `WAIT_INPUT` |
 | Dedicated reverse states | Combinational `exp_shift` using `rev_flag` |
 | ALU comparisons causing combinational loops | Direct Lucid operators for comparisons; ALU for arithmetic only |
-
-The FSM went through three iterations: from over 30 states in Iteration 1, to a refined version in Iteration 2, and finally a minimised 12-state final design.
 
 ### Multiplexing for 7-Segment Displays
 
@@ -367,6 +428,14 @@ Implementation of if-branching is fed directly back to the FSM for immediate dec
 **Alchitry Br:**
 
 - Use separate Br banks for the LED matrix, buttons, and 7-segment displays to keep wiring grouped and traceable
+
+**Wiring improvement — before vs after:**
+
+| Before (messy) | After (cleaned up) |
+|---|---|
+| <img src="images/wiring_messy.jpeg" width="400" alt="Messy wiring before cleanup"> | <img src="images/wiring_clean.jpeg" width="400" alt="Neat wiring after cleanup"> |
+
+Replacing tangled soldered wires with colour-coded jumper wires and consolidating connections via the perf board significantly improved both maintainability and signal reliability.
 
 ---
 
